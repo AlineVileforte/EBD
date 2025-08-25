@@ -433,38 +433,128 @@ def view_responses():
     st.write(f"**Respostas desta semana:** {len(weekly_responses)}")
     
     if weekly_responses:
-        # Estatísticas gerais
-        col1, col2, col3, col4 = st.columns(4)
+        # Criar abas para diferentes visualizações
+        tab1, tab2, tab3 = st.tabs(["📊 Estatísticas", "📋 Lista Detalhada", "🆔 Lista de CPFs"])
         
-        total_responses = len(weekly_responses)
-        avg_score = sum(r['score_percentage'] for r in weekly_responses) / total_responses
-        best_score = max(r['score_percentage'] for r in weekly_responses)
-        total_questions = weekly_responses[0]['total_questions'] if weekly_responses else 0
-        
-        col1.metric("Total de Participantes", total_responses)
-        col2.metric("Média Geral", f"{avg_score:.1f}%")
-        col3.metric("Melhor Pontuação", f"{best_score:.1f}%")
-        col4.metric("Total de Perguntas", total_questions)
-        
-        # Lista detalhada
-        st.subheader("📋 Lista Detalhada")
-        
-        for i, response in enumerate(weekly_responses):
-            with st.expander(f"Participante {i+1}: {response['name']} - {response['score_percentage']:.1f}%"):
-                st.write(f"**CPF:** {response['cpf']}")
-                st.write(f"**Nome:** {response['name']}")
-                st.write(f"**Pontuação:** {response['correct_answers']}/{response['total_questions']} ({response['score_percentage']:.1f}%)")
-                st.write(f"**Data:** {datetime.fromisoformat(response['timestamp']).strftime('%d/%m/%Y %H:%M')}")
+        with tab1:
+            # Estatísticas gerais
+            col1, col2, col3, col4 = st.columns(4)
+            
+            total_responses = len(weekly_responses)
+            avg_score = sum(r['score_percentage'] for r in weekly_responses) / total_responses
+            best_score = max(r['score_percentage'] for r in weekly_responses)
+            total_questions = weekly_responses[0]['total_questions'] if weekly_responses else 0
+            
+            col1.metric("Total de Participantes", total_responses)
+            col2.metric("Média Geral", f"{avg_score:.1f}%")
+            col3.metric("Melhor Pontuação", f"{best_score:.1f}%")
+            col4.metric("Total de Perguntas", total_questions)
+            
+            # Gráfico simples de distribuição de notas
+            if len(weekly_responses) > 1:
+                scores = [r['score_percentage'] for r in weekly_responses]
+                score_ranges = {
+                    "0-30%": len([s for s in scores if s < 30]),
+                    "30-60%": len([s for s in scores if 30 <= s < 60]),
+                    "60-80%": len([s for s in scores if 60 <= s < 80]),
+                    "80-100%": len([s for s in scores if s >= 80])
+                }
                 
-                # Mostrar respostas individuais
-                st.write("**Respostas:**")
-                for j, answer in enumerate(response['answers']):
-                    status = "✅" if answer['is_correct'] else "❌"
-                    st.write(f"{j+1}. {status} {answer['selected_option']}")
+                st.subheader("📈 Distribuição de Pontuações")
+                for range_name, count in score_ranges.items():
+                    if count > 0:
+                        percentage = (count / len(scores)) * 100
+                        st.write(f"**{range_name}:** {count} participantes ({percentage:.1f}%)")
         
-        # Download CSV
-        st.subheader("📥 Exportar Dados")
-        if st.button("📥 Baixar CSV Completo", type="primary"):
+        with tab2:
+            # Lista detalhada (código original)
+            st.subheader("📋 Respostas Completas")
+            
+            for i, response in enumerate(weekly_responses):
+                with st.expander(f"Participante {i+1}: {response['name']} - {response['score_percentage']:.1f}%"):
+                    st.write(f"**CPF:** {response['cpf']}")
+                    st.write(f"**Nome:** {response['name']}")
+                    st.write(f"**Pontuação:** {response['correct_answers']}/{response['total_questions']} ({response['score_percentage']:.1f}%)")
+                    st.write(f"**Data:** {datetime.fromisoformat(response['timestamp']).strftime('%d/%m/%Y %H:%M')}")
+                    
+                    # Mostrar respostas individuais
+                    st.write("**Respostas:**")
+                    for j, answer in enumerate(response['answers']):
+                        status = "✅" if answer['is_correct'] else "❌"
+                        st.write(f"{j+1}. {status} {answer['selected_option']}")
+        
+        with tab3:
+            # Nova aba: Lista de CPFs
+            st.subheader("🆔 Lista de CPFs dos Participantes")
+            st.write("CPFs de todos que responderam o quiz esta semana:")
+            
+            # Criar lista de CPFs únicos (caso alguém responda mais de uma vez)
+            cpfs_list = []
+            names_list = []
+            dates_list = []
+            scores_list = []
+            
+            for response in weekly_responses:
+                cpfs_list.append(response['cpf'])
+                names_list.append(response['name'])
+                dates_list.append(datetime.fromisoformat(response['timestamp']).strftime('%d/%m/%Y %H:%M'))
+                scores_list.append(f"{response['score_percentage']:.1f}%")
+            
+            # Mostrar em formato de tabela simples
+            cpf_df = pd.DataFrame({
+                'CPF': cpfs_list,
+                'Nome': names_list,
+                'Pontuação': scores_list,
+                'Data': dates_list
+            })
+            
+            st.dataframe(cpf_df, use_container_width=True, hide_index=True)
+            
+            # Seção com CPFs para cópia fácil
+            st.subheader("📋 CPFs para Cópia")
+            st.write("Lista de CPFs separados por vírgula:")
+            
+            cpfs_text = ', '.join(cpfs_list)
+            st.text_area(
+                "CPFs:",
+                value=cpfs_text,
+                height=100,
+                help="Você pode selecionar todo o texto e copiar (Ctrl+C)"
+            )
+            
+            # Lista numerada
+            st.subheader("📝 Lista Numerada de CPFs")
+            for i, cpf in enumerate(cpfs_list, 1):
+                st.write(f"{i}. {cpf}")
+            
+            # Botão para download apenas dos CPFs
+            st.subheader("📥 Download Lista de CPFs")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Download CPFs simples (apenas CPFs)
+                cpfs_simple = '\n'.join(cpfs_list)
+                st.download_button(
+                    label="📄 Download CPFs (TXT)",
+                    data=cpfs_simple,
+                    file_name=f"cpfs_quiz_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                    mime='text/plain'
+                )
+            
+            with col2:
+                # Download CPFs com nomes (CSV)
+                cpfs_csv = cpf_df.to_csv(index=False, encoding='utf-8-sig')
+                st.download_button(
+                    label="📊 Download CPFs + Dados (CSV)",
+                    data=cpfs_csv,
+                    file_name=f"cpfs_completo_quiz_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime='text/csv'
+                )
+        
+        # Download completo (mantido da versão original)
+        st.subheader("📥 Exportar Dados Completos")
+        if st.button("📥 Baixar Respostas Completas (CSV)", type="primary"):
             # Criar dados para CSV
             csv_data = []
             for response in weekly_responses:
@@ -484,15 +574,26 @@ def view_responses():
             df = pd.DataFrame(csv_data)
             csv = df.to_csv(index=False, encoding='utf-8-sig')
             st.download_button(
-                label="📥 Download CSV",
+                label="📥 Download CSV Completo",
                 data=csv,
-                file_name=f"respostas_quiz_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                file_name=f"respostas_completas_quiz_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                 mime='text/csv'
             )
     
     # Mostrar histórico completo
     if st.checkbox("📚 Mostrar histórico completo"):
         st.subheader("📊 Todas as Respostas (Histórico)")
+        
+        # CPFs do histórico completo
+        all_cpfs = [r['cpf'] for r in st.session_state.responses]
+        if all_cpfs:
+            with st.expander("🆔 Todos os CPFs do Histórico"):
+                all_cpfs_text = ', '.join(set(all_cpfs))  # Remove duplicatas
+                st.text_area(
+                    "Todos os CPFs que já participaram:",
+                    value=all_cpfs_text,
+                    height=80
+                )
         
         for i, response in enumerate(st.session_state.responses):
             with st.expander(f"Histórico {i+1}: {response['name']} - {datetime.fromisoformat(response['timestamp']).strftime('%d/%m/%Y')}"):
@@ -531,3 +632,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
