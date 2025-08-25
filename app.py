@@ -309,10 +309,10 @@ def save_final_response():
         'timestamp': datetime.now().isoformat()
     }
     
-   st.session_state.responses.append(final_response)
+    st.session_state.responses.append(final_response)
     
-    # ADICIONE ESTA LINHA:
-    save_data_to_file()  # Salva automaticamente
+    # Salva automaticamente no arquivo
+    save_data_to_file()
 
 def show_result_step():
     st.subheader("🎯 Resultado do Quiz")
@@ -689,5 +689,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
