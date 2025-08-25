@@ -1,9 +1,8 @@
-﻿import streamlit as st
+import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime, timedelta
 import re
-import hashlib
 
 # Configuração da página
 st.set_page_config(
@@ -60,30 +59,58 @@ def init_session_state():
         st.session_state.questions = []
     if 'responses' not in st.session_state:
         st.session_state.responses = []
-    if 'current_user' not in st.session_state:
-        st.session_state.current_user = None
-    if 'user_authenticated' not in st.session_state:
-        st.session_state.user_authenticated = False
+    if 'current_user_cpf' not in st.session_state:
+        st.session_state.current_user_cpf = None
+    if 'current_user_name' not in st.session_state:
+        st.session_state.current_user_name = None
+    if 'current_step' not in st.session_state:
+        st.session_state.current_step = 'cpf'  # cpf -> name -> quiz -> result
+    if 'current_question_index' not in st.session_state:
+        st.session_state.current_question_index = 0
+    if 'user_answers' not in st.session_state:
+        st.session_state.user_answers = []
     if 'admin_authenticated' not in st.session_state:
         st.session_state.admin_authenticated = False
     if 'current_page' not in st.session_state:
         st.session_state.current_page = 'quiz'
 
+def reset_quiz():
+    """Reseta o quiz para o início"""
+    st.session_state.current_user_cpf = None
+    st.session_state.current_user_name = None
+    st.session_state.current_step = 'cpf'
+    st.session_state.current_question_index = 0
+    st.session_state.user_answers = []
+
 # Interface para usuários
 def user_interface():
     st.title("❓ Quiz Semanal")
     
-    if not st.session_state.user_authenticated:
-        st.subheader("Digite seu CPF para participar")
-        
-        cpf_input = st.text_input(
-            "CPF",
-            placeholder="000.000.000-00",
-            max_chars=14,
-            help="Digite seu CPF para identificação"
-        )
-        
-        if st.button("Continuar"):
+    if st.session_state.current_step == 'cpf':
+        show_cpf_step()
+    elif st.session_state.current_step == 'name':
+        show_name_step()
+    elif st.session_state.current_step == 'quiz':
+        show_quiz_step()
+    elif st.session_state.current_step == 'result':
+        show_result_step()
+
+def show_cpf_step():
+    st.subheader("📋 Etapa 1: Identificação")
+    st.write("Digite seu CPF para participar do quiz:")
+    
+    cpf_input = st.text_input(
+        "CPF",
+        placeholder="000.000.000-00",
+        max_chars=14,
+        help="Digite seu CPF para identificação",
+        key="cpf_input"
+    )
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        if st.button("Próximo ➡️", type="primary", use_container_width=True):
             if validate_cpf(cpf_input):
                 formatted_cpf = format_cpf(cpf_input)
                 
@@ -96,71 +123,193 @@ def user_interface():
                 )
                 
                 if already_answered:
-                    st.error("Você já participou esta semana! Aguarde a próxima semana.")
+                    st.error("❌ Você já participou esta semana! Aguarde a próxima semana.")
                 else:
-                    st.session_state.current_user = formatted_cpf
-                    st.session_state.user_authenticated = True
+                    st.session_state.current_user_cpf = formatted_cpf
+                    st.session_state.current_step = 'name'
                     st.rerun()
             else:
-                st.error("CPF inválido! Por favor, digite um CPF válido.")
-    else:
-        show_quiz()
+                st.error("❌ CPF inválido! Por favor, digite um CPF válido.")
 
-def show_quiz():
-    if not st.session_state.questions:
-        st.warning("Nenhuma pergunta disponível no momento.")
-        if st.button("Tentar Novamente"):
-            st.session_state.user_authenticated = False
-            st.session_state.current_user = None
+def show_name_step():
+    st.subheader("👤 Etapa 2: Nome")
+    st.write("Agora digite seu nome completo:")
+    
+    name_input = st.text_input(
+        "Nome Completo",
+        placeholder="Digite seu nome completo",
+        help="Digite seu nome completo",
+        key="name_input"
+    )
+    
+    col1, col2, col3 = st.columns([1, 1, 1])
+    
+    with col1:
+        if st.button("⬅️ Voltar", use_container_width=True):
+            st.session_state.current_step = 'cpf'
             st.rerun()
+    
+    with col3:
+        if st.button("Próximo ➡️", type="primary", use_container_width=True):
+            if name_input.strip():
+                st.session_state.current_user_name = name_input.strip()
+                st.session_state.current_step = 'quiz'
+                st.session_state.current_question_index = 0
+                st.rerun()
+            else:
+                st.error("❌ Por favor, digite seu nome completo!")
+
+def show_quiz_step():
+    if not st.session_state.questions:
+        st.warning("⚠️ Nenhuma pergunta disponível no momento.")
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🔄 Tentar Novamente", use_container_width=True):
+                reset_quiz()
+                st.rerun()
         return
     
-    # Pegar a pergunta mais recente
-    current_question = st.session_state.questions[-1]
+    current_q_index = st.session_state.current_question_index
+    total_questions = len(st.session_state.questions)
     
-    st.subheader(f"Pergunta da Semana")
-    st.write(current_question['question'])
+    # Verificar se acabaram as perguntas
+    if current_q_index >= total_questions:
+        st.session_state.current_step = 'result'
+        st.rerun()
+        return
+    
+    current_question = st.session_state.questions[current_q_index]
+    
+    # Mostrar progresso
+    progress = (current_q_index + 1) / total_questions
+    st.progress(progress)
+    st.write(f"**Pergunta {current_q_index + 1} de {total_questions}**")
+    
+    st.subheader(f"❓ {current_question['question']}")
     
     # Opções de resposta
     selected_option = st.radio(
         "Escolha sua resposta:",
         current_question['options'],
-        key="selected_answer"
+        key=f"question_{current_q_index}"
     )
     
-    if st.button("Responder", type="primary"):
-        selected_index = current_question['options'].index(selected_option)
-        is_correct = selected_index == current_question['correct_answer']
-        
-        # Salvar resposta
-        response = {
-            'cpf': st.session_state.current_user,
-            'question': current_question['question'],
-            'selected_option': selected_option,
-            'selected_index': selected_index,
-            'correct_answer': current_question['correct_answer'],
-            'correct_option': current_question['options'][current_question['correct_answer']],
-            'is_correct': is_correct,
-            'timestamp': datetime.now().isoformat(),
-            'feedback': current_question.get('feedback', '')
-        }
-        
-        st.session_state.responses.append(response)
-        
-        # Mostrar resultado
-        if is_correct:
-            st.success("🎉 Parabéns! Resposta correta!")
+    # Botões de navegação
+    col1, col2, col3 = st.columns([1, 1, 1])
+    
+    with col1:
+        if current_q_index == 0:
+            if st.button("⬅️ Voltar", use_container_width=True):
+                st.session_state.current_step = 'name'
+                st.rerun()
         else:
-            st.error(f"❌ Resposta incorreta. A resposta correta era: **{response['correct_option']}**")
+            if st.button("⬅️ Anterior", use_container_width=True):
+                st.session_state.current_question_index -= 1
+                st.rerun()
+    
+    with col3:
+        if current_q_index == total_questions - 1:
+            button_text = "🏁 Finalizar"
+        else:
+            button_text = "Próximo ➡️"
         
-        # Mostrar feedback
-        if response['feedback']:
-            st.info(f"📝 **Feedback:** {response['feedback']}")
-        
-        # Botão para reiniciar
-        if st.button("Fazer Novo Quiz"):
-            st.session_state.user_authenticated = False
-            st.session_state.current_user = None
+        if st.button(button_text, type="primary", use_container_width=True):
+            # Salvar resposta atual
+            selected_index = current_question['options'].index(selected_option)
+            is_correct = selected_index == current_question['correct_answer']
+            
+            answer = {
+                'question_index': current_q_index,
+                'question': current_question['question'],
+                'selected_option': selected_option,
+                'selected_index': selected_index,
+                'correct_answer': current_question['correct_answer'],
+                'correct_option': current_question['options'][current_question['correct_answer']],
+                'is_correct': is_correct,
+                'feedback': current_question.get('feedback', '')
+            }
+            
+            # Atualizar ou adicionar resposta
+            if len(st.session_state.user_answers) > current_q_index:
+                st.session_state.user_answers[current_q_index] = answer
+            else:
+                st.session_state.user_answers.append(answer)
+            
+            # Próxima pergunta ou finalizar
+            if current_q_index == total_questions - 1:
+                # Finalizar quiz
+                save_final_response()
+                st.session_state.current_step = 'result'
+            else:
+                st.session_state.current_question_index += 1
+            
+            st.rerun()
+
+def save_final_response():
+    """Salva todas as respostas do usuário"""
+    final_response = {
+        'cpf': st.session_state.current_user_cpf,
+        'name': st.session_state.current_user_name,
+        'answers': st.session_state.user_answers,
+        'total_questions': len(st.session_state.questions),
+        'correct_answers': sum(1 for a in st.session_state.user_answers if a['is_correct']),
+        'score_percentage': (sum(1 for a in st.session_state.user_answers if a['is_correct']) / len(st.session_state.questions)) * 100,
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    st.session_state.responses.append(final_response)
+
+def show_result_step():
+    st.subheader("🎯 Resultado do Quiz")
+    
+    if not st.session_state.user_answers:
+        st.error("Erro: Nenhuma resposta encontrada.")
+        return
+    
+    total_questions = len(st.session_state.user_answers)
+    correct_answers = sum(1 for a in st.session_state.user_answers if a['is_correct'])
+    score_percentage = (correct_answers / total_questions) * 100
+    
+    # Mostrar pontuação
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Total de Perguntas", total_questions)
+    with col2:
+        st.metric("Respostas Corretas", correct_answers)
+    with col3:
+        st.metric("Pontuação", f"{score_percentage:.1f}%")
+    
+    # Feedback geral
+    if score_percentage >= 80:
+        st.success("🎉 Excelente! Parabéns pelo seu desempenho!")
+    elif score_percentage >= 60:
+        st.info("👍 Bom trabalho! Continue assim!")
+    else:
+        st.warning("📚 Continue estudando! Você pode melhorar!")
+    
+    # Mostrar detalhes de cada pergunta
+    st.subheader("📊 Detalhes das Respostas")
+    
+    for i, answer in enumerate(st.session_state.user_answers):
+        with st.expander(f"Pergunta {i + 1}: {answer['question'][:50]}..."):
+            st.write(f"**Pergunta:** {answer['question']}")
+            st.write(f"**Sua resposta:** {answer['selected_option']}")
+            st.write(f"**Resposta correta:** {answer['correct_option']}")
+            
+            if answer['is_correct']:
+                st.success("✅ Resposta correta!")
+            else:
+                st.error("❌ Resposta incorreta")
+            
+            if answer['feedback']:
+                st.info(f"**Feedback:** {answer['feedback']}")
+    
+    # Botão para refazer
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🔄 Fazer Novo Quiz", type="primary", use_container_width=True):
+            reset_quiz()
             st.rerun()
 
 # Interface administrativa
@@ -168,15 +317,17 @@ def admin_interface():
     st.title("🔧 Painel Administrativo")
     
     if not st.session_state.admin_authenticated:
-        st.subheader("Login Administrativo")
+        st.subheader("🔐 Login Administrativo")
         password = st.text_input("Senha", type="password")
         
-        if st.button("Entrar"):
-            if password == ADMIN_PASSWORD:
-                st.session_state.admin_authenticated = True
-                st.rerun()
-            else:
-                st.error("Senha incorreta!")
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("Entrar", type="primary", use_container_width=True):
+                if password == ADMIN_PASSWORD:
+                    st.session_state.admin_authenticated = True
+                    st.rerun()
+                else:
+                    st.error("❌ Senha incorreta!")
     else:
         admin_panel()
 
@@ -191,17 +342,19 @@ def admin_panel():
         view_responses()
     
     # Botão de logout
-    if st.button("🚪 Sair", type="secondary"):
-        st.session_state.admin_authenticated = False
-        st.rerun()
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🚪 Sair", type="secondary", use_container_width=True):
+            st.session_state.admin_authenticated = False
+            st.rerun()
 
 def manage_questions():
-    st.subheader("Adicionar Nova Pergunta")
+    st.subheader("➕ Adicionar Nova Pergunta")
     
-    with st.form("new_question_form"):
+    with st.form("new_question_form", clear_on_submit=True):
         question_text = st.text_input("Pergunta")
         
-        st.write("Opções de resposta:")
+        st.write("**Opções de resposta:**")
         option1 = st.text_input("Opção 1")
         option2 = st.text_input("Opção 2")
         option3 = st.text_input("Opção 3")
@@ -213,9 +366,9 @@ def manage_questions():
             format_func=lambda x: f"Opção {x + 1}"
         )
         
-        feedback = st.text_area("Feedback da resposta")
+        feedback = st.text_area("Feedback da resposta", help="Explicação ou informação adicional sobre a resposta correta")
         
-        submitted = st.form_submit_button("Adicionar Pergunta", type="primary")
+        submitted = st.form_submit_button("➕ Adicionar Pergunta", type="primary", use_container_width=True)
         
         if submitted:
             if question_text and all([option1, option2, option3, option4]) and feedback:
@@ -229,13 +382,13 @@ def manage_questions():
                 }
                 
                 st.session_state.questions.append(new_question)
-                st.success("Pergunta adicionada com sucesso!")
+                st.success(f"✅ Pergunta {len(st.session_state.questions)} adicionada com sucesso!")
                 st.rerun()
             else:
-                st.error("Por favor, preencha todos os campos!")
+                st.error("❌ Por favor, preencha todos os campos!")
     
     # Lista de perguntas existentes
-    st.subheader("Perguntas Existentes")
+    st.subheader(f"📋 Perguntas Existentes ({len(st.session_state.questions)})")
     
     if st.session_state.questions:
         for i, q in enumerate(st.session_state.questions):
@@ -246,18 +399,28 @@ def manage_questions():
                     prefix = "✅" if j == q['correct_answer'] else "•"
                     st.write(f"{prefix} {option}")
                 st.write(f"**Feedback:** {q['feedback']}")
+                st.write(f"**Criada em:** {datetime.fromisoformat(q['created_at']).strftime('%d/%m/%Y %H:%M')}")
                 
-                if st.button(f"Excluir Pergunta {i + 1}", key=f"delete_{i}"):
-                    st.session_state.questions.pop(i)
-                    st.rerun()
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(f"🗑️ Excluir", key=f"delete_{i}", type="secondary"):
+                        st.session_state.questions.pop(i)
+                        st.success(f"Pergunta {i + 1} excluída!")
+                        st.rerun()
+                
+                with col2:
+                    if st.button(f"⬆️ Mover para cima", key=f"up_{i}", disabled=(i == 0)):
+                        if i > 0:
+                            st.session_state.questions[i], st.session_state.questions[i-1] = st.session_state.questions[i-1], st.session_state.questions[i]
+                            st.rerun()
     else:
-        st.info("Nenhuma pergunta cadastrada ainda.")
+        st.info("📝 Nenhuma pergunta cadastrada ainda. Adicione a primeira pergunta acima!")
 
 def view_responses():
-    st.subheader("Respostas dos Participantes")
+    st.subheader("📊 Respostas dos Participantes")
     
     if not st.session_state.responses:
-        st.info("Nenhuma resposta registrada ainda.")
+        st.info("📋 Nenhuma resposta registrada ainda.")
         return
     
     # Filtrar por semana atual
@@ -270,70 +433,95 @@ def view_responses():
     st.write(f"**Respostas desta semana:** {len(weekly_responses)}")
     
     if weekly_responses:
-        # Criar DataFrame
-        df_data = []
-        for r in weekly_responses:
-            df_data.append({
-                'CPF': r['cpf'],
-                'Pergunta': r['question'][:50] + "..." if len(r['question']) > 50 else r['question'],
-                'Resposta': r['selected_option'],
-                'Status': '✅ Correta' if r['is_correct'] else '❌ Incorreta',
-                'Data': datetime.fromisoformat(r['timestamp']).strftime('%d/%m/%Y %H:%M')
-            })
+        # Estatísticas gerais
+        col1, col2, col3, col4 = st.columns(4)
         
-        df = pd.DataFrame(df_data)
-        st.dataframe(df, use_container_width=True)
+        total_responses = len(weekly_responses)
+        avg_score = sum(r['score_percentage'] for r in weekly_responses) / total_responses
+        best_score = max(r['score_percentage'] for r in weekly_responses)
+        total_questions = weekly_responses[0]['total_questions'] if weekly_responses else 0
         
-        # Estatísticas
-        col1, col2, col3 = st.columns(3)
+        col1.metric("Total de Participantes", total_responses)
+        col2.metric("Média Geral", f"{avg_score:.1f}%")
+        col3.metric("Melhor Pontuação", f"{best_score:.1f}%")
+        col4.metric("Total de Perguntas", total_questions)
         
-        correct_count = sum(1 for r in weekly_responses if r['is_correct'])
-        total_count = len(weekly_responses)
-        accuracy = (correct_count / total_count) * 100 if total_count > 0 else 0
+        # Lista detalhada
+        st.subheader("📋 Lista Detalhada")
         
-        col1.metric("Total de Respostas", total_count)
-        col2.metric("Respostas Corretas", correct_count)
-        col3.metric("Taxa de Acerto", f"{accuracy:.1f}%")
+        for i, response in enumerate(weekly_responses):
+            with st.expander(f"Participante {i+1}: {response['name']} - {response['score_percentage']:.1f}%"):
+                st.write(f"**CPF:** {response['cpf']}")
+                st.write(f"**Nome:** {response['name']}")
+                st.write(f"**Pontuação:** {response['correct_answers']}/{response['total_questions']} ({response['score_percentage']:.1f}%)")
+                st.write(f"**Data:** {datetime.fromisoformat(response['timestamp']).strftime('%d/%m/%Y %H:%M')}")
+                
+                # Mostrar respostas individuais
+                st.write("**Respostas:**")
+                for j, answer in enumerate(response['answers']):
+                    status = "✅" if answer['is_correct'] else "❌"
+                    st.write(f"{j+1}. {status} {answer['selected_option']}")
         
         # Download CSV
-        if st.button("📥 Baixar CSV"):
-            csv = df.to_csv(index=False)
+        st.subheader("📥 Exportar Dados")
+        if st.button("📥 Baixar CSV Completo", type="primary"):
+            # Criar dados para CSV
+            csv_data = []
+            for response in weekly_responses:
+                for j, answer in enumerate(response['answers']):
+                    csv_data.append({
+                        'CPF': response['cpf'],
+                        'Nome': response['name'],
+                        'Pergunta_Numero': j + 1,
+                        'Pergunta': answer['question'],
+                        'Resposta_Selecionada': answer['selected_option'],
+                        'Resposta_Correta': answer['correct_option'],
+                        'Status': 'Correta' if answer['is_correct'] else 'Incorreta',
+                        'Pontuacao_Final': f"{response['score_percentage']:.1f}%",
+                        'Data': datetime.fromisoformat(response['timestamp']).strftime('%d/%m/%Y %H:%M')
+                    })
+            
+            df = pd.DataFrame(csv_data)
+            csv = df.to_csv(index=False, encoding='utf-8-sig')
             st.download_button(
-                label="Download CSV",
+                label="📥 Download CSV",
                 data=csv,
-                file_name=f"respostas_quiz_{datetime.now().strftime('%Y%m%d')}.csv",
+                file_name=f"respostas_quiz_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                 mime='text/csv'
             )
     
-    # Mostrar todas as respostas (histórico)
-    if st.checkbox("Mostrar histórico completo"):
-        st.subheader("Todas as Respostas")
+    # Mostrar histórico completo
+    if st.checkbox("📚 Mostrar histórico completo"):
+        st.subheader("📊 Todas as Respostas (Histórico)")
         
-        all_df_data = []
-        for r in st.session_state.responses:
-            all_df_data.append({
-                'CPF': r['cpf'],
-                'Pergunta': r['question'][:50] + "..." if len(r['question']) > 50 else r['question'],
-                'Resposta': r['selected_option'],
-                'Status': '✅ Correta' if r['is_correct'] else '❌ Incorreta',
-                'Data': datetime.fromisoformat(r['timestamp']).strftime('%d/%m/%Y %H:%M')
-            })
-        
-        all_df = pd.DataFrame(all_df_data)
-        st.dataframe(all_df, use_container_width=True)
+        for i, response in enumerate(st.session_state.responses):
+            with st.expander(f"Histórico {i+1}: {response['name']} - {datetime.fromisoformat(response['timestamp']).strftime('%d/%m/%Y')}"):
+                st.write(f"**CPF:** {response['cpf']}")
+                st.write(f"**Nome:** {response['name']}")
+                st.write(f"**Pontuação:** {response['correct_answers']}/{response['total_questions']} ({response['score_percentage']:.1f}%)")
+                st.write(f"**Data:** {datetime.fromisoformat(response['timestamp']).strftime('%d/%m/%Y %H:%M')}")
 
 # Aplicação principal
 def main():
     init_session_state()
     
     # Sidebar para navegação
-    st.sidebar.title("Navegação")
+    st.sidebar.title("🧭 Navegação")
+    st.sidebar.write(f"**Total de Perguntas:** {len(st.session_state.questions)}")
+    st.sidebar.write(f"**Total de Respostas:** {len(st.session_state.responses)}")
     
-    if st.sidebar.button("🏠 Quiz"):
+    if st.sidebar.button("🏠 Quiz", use_container_width=True):
         st.session_state.current_page = 'quiz'
     
-    if st.sidebar.button("⚙️ Admin"):
+    if st.sidebar.button("⚙️ Admin", use_container_width=True):
         st.session_state.current_page = 'admin'
+    
+    # Botão de reset para admins
+    if st.session_state.admin_authenticated:
+        st.sidebar.write("---")
+        if st.sidebar.button("🔄 Reset Quiz (Admin)", type="secondary"):
+            reset_quiz()
+            st.rerun()
     
     # Mostrar página atual
     if st.session_state.current_page == 'quiz':
@@ -343,4 +531,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
