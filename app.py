@@ -3,6 +3,58 @@ import pandas as pd
 import json
 from datetime import datetime, timedelta
 import re
+import os
+
+# Adicione estas funções logo após as imports
+def save_data_to_file():
+    """Salva dados em arquivo JSON"""
+    data = {
+        'questions': st.session_state.questions,
+        'responses': st.session_state.responses
+    }
+    
+    with open('quiz_data.json', 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def load_data_from_file():
+    """Carrega dados do arquivo JSON"""
+    if os.path.exists('quiz_data.json'):
+        try:
+            with open('quiz_data.json', 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                st.session_state.questions = data.get('questions', [])
+                st.session_state.responses = data.get('responses', [])
+        except:
+            # Se houver erro, inicializa vazio
+            st.session_state.questions = []
+            st.session_state.responses = []
+    else:
+        st.session_state.questions = []
+        st.session_state.responses = []
+
+# MODIFIQUE a função init_session_state():
+def init_session_state():
+    """Inicializa variáveis de sessão"""
+    # Carregar dados salvos primeiro
+    if 'data_loaded' not in st.session_state:
+        load_data_from_file()
+        st.session_state.data_loaded = True
+    
+    # Inicializar outras variáveis (mantém o código original)
+    if 'current_user_cpf' not in st.session_state:
+        st.session_state.current_user_cpf = None
+    if 'current_user_name' not in st.session_state:
+        st.session_state.current_user_name = None
+    if 'current_step' not in st.session_state:
+        st.session_state.current_step = 'cpf'
+    if 'current_question_index' not in st.session_state:
+        st.session_state.current_question_index = 0
+    if 'user_answers' not in st.session_state:
+        st.session_state.user_answers = []
+    if 'admin_authenticated' not in st.session_state:
+        st.session_state.admin_authenticated = False
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = 'quiz'
 
 # Configuração da página
 st.set_page_config(
@@ -257,7 +309,10 @@ def save_final_response():
         'timestamp': datetime.now().isoformat()
     }
     
-    st.session_state.responses.append(final_response)
+   st.session_state.responses.append(final_response)
+    
+    # ADICIONE ESTA LINHA:
+    save_data_to_file()  # Salva automaticamente
 
 def show_result_step():
     st.subheader("🎯 Resultado do Quiz")
@@ -382,6 +437,7 @@ def manage_questions():
                 }
                 
                 st.session_state.questions.append(new_question)
+                save_data_to_file()
                 st.success(f"✅ Pergunta {len(st.session_state.questions)} adicionada com sucesso!")
                 st.rerun()
             else:
@@ -405,6 +461,7 @@ def manage_questions():
                 with col1:
                     if st.button(f"🗑️ Excluir", key=f"delete_{i}", type="secondary"):
                         st.session_state.questions.pop(i)
+                        save_data_to_file() 
                         st.success(f"Pergunta {i + 1} excluída!")
                         st.rerun()
                 
@@ -632,4 +689,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
